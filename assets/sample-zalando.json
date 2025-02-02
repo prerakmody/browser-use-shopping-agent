@@ -1,0 +1,55 @@
+{
+  "site_name": "Zalando",
+  "products": [
+    {
+      "name": "PME Legend PULLOVER - Sweater - rosin",
+      "url_product": "https://www.zalando.nl/pme-legend-mit-halbem-reissverschluss-sweater-rosin-pg322s032-m11.html",
+      "url_image": "https://img01.ztat.net/article/spp-media-p1/65cf8b7c4c874104889ff72395e533a3/dc11764e739f4a2ca58f08684f2e78b0.jpg?imwidth=300",
+      "price": "€ 99,99",
+      "color": "rosin",
+      "material": "NULL",
+      "available_sizes": "NULL",
+      "other_properties": "Gesponsord"
+    },
+    {
+      "name": "PME Legend PULLOVER - Sweater - salute",
+      "url_product": "https://www.zalando.nl/pme-legend-mit-halbem-reissverschluss-sweater-salute-pg322s032-k11.html",
+      "url_image": "https://img01.ztat.net/article/spp-media-p1/71eda1e5ed464e538a5fd0ff32421e24/7b8889b4066a427ca912d8f12ac29b53.jpg?imwidth=300",
+      "price": "€ 99,99",
+      "color": "salute",
+      "material": "NULL",
+      "available_sizes": "NULL",
+      "other_properties": "Gesponsord"
+    },
+    {
+      "name": "PME Legend SWEATSHIRT - Sweater - birch",
+      "url_product": "https://www.zalando.nl/pme-legend-sweater-birch-pg322s03l-b11.html",
+      "url_image": "https://img01.ztat.net/article/spp-media-p1/5a72f8dc6deb44e9940b5eb685d49147/b2081efe6f1645f2ae9467fcfa051f5b.jpg?imwidth=300",
+      "price": "€ 99,99",
+      "color": "birch",
+      "material": "NULL",
+      "available_sizes": "NULL",
+      "other_properties": "Gesponsord"
+    },
+    {
+      "name": "Bershka HIGH NECK - Sweater - dark green",
+      "url_product": "https://www.zalando.nl/bershka-sweater-dark-green-bej22s0b9-m11.html",
+      "url_image": "https://img01.ztat.net/article/spp-media-p1/d895a025efa349c588171dff52f4856d/7cc388b9e588470589abc0cbcb2c00e7.jpg?imwidth=300",
+      "price": "€ 25,99",
+      "color": "dark green",
+      "material": "NULL",
+      "available_sizes": "NULL",
+      "other_properties": "NULL"
+    },
+    {
+      "name": "INDICODE JEANS INBRANDT - Sweater - dark navy",
+      "url_product": "https://www.zalando.nl/indicode-jeans-sweater-dark-navy-ij022s06l-k11.html",
+      "url_image": "https://img01.ztat.net/article/spp-media-p1/580789bb074643da87e8778df6204273/59c1e52d420d44c1b4c58da54a710b2f.jpg?imwidth=300",
+      "price": "Vanaf € 35,99",
+      "color": "dark navy",
+      "material": "NULL",
+      "available_sizes": "NULL",
+      "other_properties": "Origineel: € 44,99, Tot 20%"
+    }
+  ]
+}
