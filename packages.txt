@@ -11,3 +11,4 @@ libasound2
 libxdamage1
 libxkbcommon0
 libgtk-3-0
+libx11-xcb1
