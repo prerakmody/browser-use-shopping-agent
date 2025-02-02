@@ -58,6 +58,16 @@ OLLAMA_MODEL_MISTRAL = "mistral"
 # UTILS
 ###################################################
 
+def install_playwright_browsers():
+    try:
+        subprocess.run(["playwright", "install", "chromium"], check=True)
+        subprocess.run(["playwright", "install", "firefox"], check=True)
+        subprocess.run(["playwright", "install", "webkit"], check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"Error installing Playwright browsers: {e}")
+
+install_playwright_browsers()
+
 def is_valid_url(url):
     try:
         result = urlparse(url)
