@@ -13,7 +13,6 @@ libxkbcommon0
 libgtk-3-0
 libx11-xcb1
 libxslt1-dev
-libwoff2-dev
 libevent-dev
 libopus-dev
 flite1-dev
@@ -22,9 +21,7 @@ libharfbuzz-dev
 libenchant-2-dev
 libsecret-1-dev
 libhyphen-dev
-libmanette-dev
 libegl1-mesa-dev  # Or libegl1-mesa
 libgl1-mesa-glx  # Or libgl1-mesa-dri
-libgudev-dev
 libgles2-mesa-dev # Or libgles2-mesa
 libx264-dev
