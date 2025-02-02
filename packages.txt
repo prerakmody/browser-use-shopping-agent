@@ -25,3 +25,6 @@ libegl1-mesa-dev
 libgl1-mesa-glx
 libgles2-mesa-dev
 libx264-dev
+libwoff1
+libmanette-0.2-0
+libgudev-1.0-0
