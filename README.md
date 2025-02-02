@@ -6,7 +6,9 @@ Send the same query to multiple shopping websites and displays the results
 2. Install packages
 ```bash
 pip instal browser_use, streamlit, dotenv
-pip install openai, langchain_openai
+pip install openai
+
+playwright install
 ```
 
 # Usage

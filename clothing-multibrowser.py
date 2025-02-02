@@ -16,6 +16,7 @@ import subprocess
 import traceback
 from pathlib import Path
 from io import StringIO
+from pydantic import SecretStr
 from urllib.parse import urlparse
 
 # Third-party packages
@@ -25,6 +26,7 @@ from dotenv import load_dotenv # loads from .env file containing OPENAI_API_KEY=
 from browser_use import Agent
 from langchain_openai import ChatOpenAI
 from langchain_ollama import ChatOllama
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 # Step 0.1 - Init (load env variables)
 load_dotenv()
@@ -44,8 +46,10 @@ if len(DEBUG_JSON_PATHS) > 0:
             debugOutput.append(json.load(f))
 
 KEY_OPENAI = "Open AI"
+KEY_GOOGLE_GEMINI = "Google Gemini"
 KEY_OLLAMA = "Ollama (local)"
 ENV_OPENAI_API_KEY = "OPENAI_API_KEY"
+ENV_GEMINI_API_KEY = "GEMINI_API_KEY"
 
 OLLAMA_MODEL_LLAMA32 = "llama3.2"
 OLLAMA_MODEL_MISTRAL = "mistral"
@@ -119,8 +123,10 @@ async def run_agent(task, model_source, modelname):
             llm = ChatOpenAI(model=modelname, timeout=90000) # model="gpt-4o-mini", "gpt-4o", "gpt-4o-turbo
         elif model_source == KEY_OLLAMA:
             llm = ChatOllama(model=modelname, num_ctx=32000)
+        elif model_source == KEY_GOOGLE_GEMINI:
+            llm = ChatGoogleGenerativeAI(model=modelname, api_key=SecretStr(os.getenv(ENV_GEMINI_API_KEY)))
 
-        agent = Agent(task=task,llm=llm)
+        agent = Agent(task=task,llm=llm, max_failures=10) # use_vision=True,
         result = await agent.run()
 
         logging.info(f"\n\n ====================== [model={model_source, modelname}] Completed task: {task} \n\n")
@@ -131,14 +137,16 @@ async def run_agent(task, model_source, modelname):
     return result
 
 async def run_agents(tasks, completion_event, model_source, modelname):
-    results = await asyncio.gather(*[run_agent(task, model_source, modelname) for task in tasks])
+    listHistoryAgents = await asyncio.gather(*[run_agent(task, model_source, modelname) for task in tasks])
     completion_event.set()
     print ('\n - [DEBUG] I have finished all the agents')
-    return results
+    return listHistoryAgents
 
 async def update_logs(log_placeholder, completion_event):
+    logging.info("Starting log update loop")
     while not completion_event.is_set():
-        log_placeholder.text(log_stream.getvalue())
+        # log_placeholder.text(log_stream.getvalue())
+        log_placeholder.write(log_stream.getvalue())
         await asyncio.sleep(0.5)  # Update logs every 0.5 seconds
 
 ###################################################
@@ -154,7 +162,7 @@ def main():
 
         ## ---------------- Step 1.2 - Streamlit UI (get model)
         models_ollama = get_ollama_models()
-        model_source = st.sidebar.selectbox("Select model source:", [KEY_OPENAI] + ([KEY_OLLAMA] if len(models_ollama) else []))
+        model_source = st.sidebar.selectbox("Select model source:", [KEY_OPENAI, KEY_GOOGLE_GEMINI] + ([KEY_OLLAMA] if len(models_ollama) else []))
         st.session_state.model_source_valid = False
 
         if model_source == KEY_OPENAI:
@@ -174,24 +182,44 @@ def main():
                         st.rerun()
                     else:
                         st.sidebar.error("Invalid OpenAI API key.")
+            else:
+                st.session_state.model_list_openai = get_models_openai()
+                st.session_state.model_source_valid = True
+
+        elif model_source == KEY_GOOGLE_GEMINI:
+            st.session_state.model_list_openai = ["gemini-2.0-flash-exp"]
+            if os.getenv(ENV_GEMINI_API_KEY) is None:
+                st.sidebar.markdown('---')
+                st.sidebar.error("Please set the GEMINI_API_KEY environment variable.")
+                key = st.sidebar.text_input("Enter your Google Gemini API key:", type="password")
+                st.sidebar.markdown('---')
+                if key:
+                    os.environ[ENV_GEMINI_API_KEY] = key
+                    st.session_state.model_source_valid = True
+                    st.sidebar.success("Google Gemini API key set successfully.")
+                    st.rerun()
+            else:
+                st.session_state.model_source_valid = True
+
         elif model_source == KEY_OLLAMA:
             st.session_state.model_list_ollama = models_ollama
             st.session_state.model_source_valid = True
 
         ## ---------------- Step 1.3 - Streamlit UI (User input)
         if st.session_state.model_source_valid:
-            st.session_state.model_list_openai = get_models_openai()
+            
             query = st.text_input("Enter your query:", help="e.g. 'black t-shirt, gray pantaloons, jumpsuit, troyer collar etc'")
             size = st.selectbox("Select size:", ["S", "M", "L"])
             sex = st.radio("Select sex:", ["Male", "Female", "Unisex"])
             websites = st.multiselect("Select websites to query:", ["zalando.nl", "hm.com", "zara.nl"])
             result_count = st.slider("Number of results:", 5, 15, 5)
             if model_source == KEY_OPENAI:
-                try:
-                    model_idx = st.session_state.model_list_openai.index("gpt-4o-mini")
-                    modelname = st.selectbox("Select model:", st.session_state.model_list_openai, index=model_idx)
-                except:
-                    modelname = "gpt-4o-mini"
+                st.session_state.model_list_openai = get_models_openai()
+                model_idx = st.session_state.model_list_openai.index("gpt-4o-mini")
+                modelname = st.selectbox("Select model:", st.session_state.model_list_openai, index=model_idx)
+            elif model_source == KEY_GOOGLE_GEMINI:
+                model_idx = st.session_state.model_list_openai.index("gemini-2.0-flash-exp")
+                modelname = st.selectbox("Select model:", st.session_state.model_list_openai, index=model_idx)
             elif model_source == KEY_OLLAMA:
                 model_idx = st.session_state.model_list_ollama.index(OLLAMA_MODEL_LLAMA32)
                 modelname = st.selectbox("Select model:", st.session_state.model_list_ollama, index=model_idx)
@@ -216,14 +244,15 @@ def main():
                 if len(debugOutput) == 0:
                     tasks = [
                         # f"""Search for '{query}' of size {size} for {sex} on {website}.
-                        f"""Open {website}, reject all cookies (if prompted), find the search bar and input the search term='{query}'. 
+                        f"""Open {website}, reject all cookies (if prompted) and convert language to English. If you cannot convert language to English, then just proceed.
+                        Then find the search bar and input the search term = '{query}'. 
                         Then filter with size={size} and sex={sex}.
                         Look at the top {result_count} results and visit the webpage for each item.
                         Parse these items' webpages and return a .json with the primary keys as 'site_name' and 'products'. 
                         The 'products' key is a list of items with the following keys:
-                        'name', 'url_product', 'url_image', 'price', 'color', 'material', 'available_sizes', 'other_properties'. 
+                        'name', 'url_product', 'url_image', 'price', 'color', 'material', 'available_sizes', 'fit' and 'other_properties'. 
                         Refine the results for color, material, available sizes, and other properties by opening each products page.
-                        Ignore care instructions, reviews, and other irrelevant information.
+                        Ignore delivery, return, care instructions, reviews, and other irrelevant information.
                         """
                         for website in websites
                     ]
@@ -236,10 +265,10 @@ def main():
                     with st.spinner("Searching..."):
                         loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(loop)
-                        resultsList = loop.run_until_complete(
+                        results = loop.run_until_complete(
                             asyncio.gather(run_agents(tasks, completion_event, model_source, modelname), update_logs(log_placeholder, completion_event))
                         )
-                        resultsList = resultsList[0]  # Get the results from the first coroutine
+                        listHistoryAgents = results[0]  # Get the results from the first coroutine
                     timeTaken = time.time() - tStart
                     st.write(f"Time taken: {timeTaken:.2f} seconds")
 
@@ -248,8 +277,8 @@ def main():
                 if len(debugOutput) == 0:
                     
                     print ('\n\n ================ Parsing results ================= \n\n')
-                    for resultObj in resultsList: # type(result) == browser_use.agent.views.AgentHistoryList
-                        resultObjList = resultObj.action_results()
+                    for historyAgentObj in listHistoryAgents: # type(result) == browser_use.agent.views.AgentHistoryList
+                        resultObjList = historyAgentObj.action_results()
                         print (f'\n\n ================ resultObj (len={len(resultObjList)}) ================= \n\n')
                         for stepId, actionResult in enumerate(resultObjList):
                             try:
@@ -273,7 +302,7 @@ def main():
                 st.json(combined_results, expanded=False)
                 
                 ## ---------------- Step 6 - Display results
-                # pdb.set_trace()
+                pdb.set_trace()
                 if 1:
 
                     num_columns = 3  # Number of columns in the grid
@@ -328,4 +357,6 @@ llm.invoke(messages)
 """
 To-check
 - https://github.com/emmetify/emmetify-py
+- https://github.com/browser-use/browser-use/blob/0.1.34/docs/customize/output-format.mdx
+- initial_actions
 """
