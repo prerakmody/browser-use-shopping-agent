@@ -165,7 +165,7 @@ class ProductList(BaseModel):
 # AGENTS
 ###################################################
 
-async def run_agent(task, model_source, modelname, controller):
+async def run_agent(task, initial_actions, model_source, modelname, controller):
 
     result = None
 
@@ -178,7 +178,11 @@ async def run_agent(task, model_source, modelname, controller):
         elif model_source == KEY_GOOGLE_GEMINI:
             llm = ChatGoogleGenerativeAI(model=modelname, api_key=SecretStr(os.getenv(ENV_GEMINI_API_KEY)))
 
-        agent = Agent(task=task,llm=llm, max_failures=10, browser=browserObj, controller=controller) # use_vision=True,
+        agent = Agent(task=task,llm=llm
+                      , max_failures=10, browser=browserObj
+                      , controller=controller
+                      , initial_actions=initial_actions
+                      ) # use_vision=True,
         result = await agent.run()
 
         logging.info(f"\n\n ====================== [model={model_source, modelname}] Completed task: {task} \n\n")
@@ -188,8 +192,8 @@ async def run_agent(task, model_source, modelname, controller):
 
     return result
 
-async def run_agents(tasks, completion_event, model_source, modelname, controller):
-    listHistoryAgents = await asyncio.gather(*[run_agent(task, model_source, modelname, controller) for task in tasks])
+async def run_agents(task_list, initial_actions_list, completion_event, model_source, modelname, controller):
+    listHistoryAgents = await asyncio.gather(*[run_agent(task, initial_actions_list[taskId], model_source, modelname, controller) for taskId, task in enumerate(task_list)])
     completion_event.set()
     print ('\n - [DEBUG] I have finished all the agents')
     return listHistoryAgents
@@ -216,7 +220,7 @@ def main():
             layout="centered",  # Optional: Layout of the page ("centered" or "wide")
             initial_sidebar_state="expanded",  # Optional: Initial state of the sidebar ("expanded" or "collapsed")
         )
-        # st.title("Clothing Search App")
+        st.title("Clothing Search App")
 
         ## ---------------- Step 1.2 - Streamlit UI (get model)
         models_ollama = get_ollama_models()
@@ -269,7 +273,7 @@ def main():
             query = st.text_input("Enter your query:", help="e.g. 'black t-shirt, gray pantaloons, jumpsuit, troyer collar etc'")
             size = st.selectbox("Select size:", ["S", "M", "L"])
             sex = st.radio("Select sex:", ["Male", "Female", "Unisex"])
-            websites = st.multiselect("Select websites to query:", ["zalando.nl", "hm.com", "zara.nl"])
+            websites = st.multiselect("Select websites to query:", ["https://www.zalando.nl", "https://www.hm.com", "https://www.zara.nl"])
             result_count = st.slider("Number of results:", 1, 15, 1)
             if model_source == KEY_OPENAI:
                 st.session_state.model_list_openai = get_models_openai()
@@ -300,13 +304,14 @@ def main():
 
                 ## ---------------- Step 4 - Setup prompt (TODO: need more prompt finetuning)
                 if len(debugOutput) == 0:
-                    tasks = [
+                    task_list = [
                         # f"""Search for '{query}' of size {size} for {sex} on {website}.
                         f"""Open {website}, reject all cookies (if prompted) and convert language to English. If you cannot convert language to English, then just proceed.
                         Then find the search bar, input the search term = '{query}' and hit Enter. if the search bar cannot be found, move on to the next step.
                         Then filter with size={size} and sex={sex}.
                         Look at the top {result_count} results and visit the webpage for each item.
-                        Parse these items' webpages and return a .json with the primary keys as 'site_name' and 'products'. 
+                        Parse these items' webpages and ensure that it matches the search term = '{query}'. 
+                        Then return a .json with the primary keys as 'site_name' and 'products'. 
                         The 'products' key is a list of items with the following keys:
                         'name', 'url_product', 'url_image', 'price', 'color', 'material', 'available_sizes', 'fit' and 'other_properties'. 
                         Refine the results for color, material, available sizes, and other properties by opening each products page.
@@ -314,6 +319,8 @@ def main():
                         """
                         for website in websites
                     ]
+
+                    initial_actions_list = [ [{'open_tab': {'url': website}}] for website in websites ]
 
                     controller = Controller(output_model=ProductList)
 
@@ -326,7 +333,7 @@ def main():
                         loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(loop)
                         results = loop.run_until_complete(
-                            asyncio.gather(run_agents(tasks, completion_event, model_source, modelname, controller), update_logs(log_placeholder, completion_event))
+                            asyncio.gather(run_agents(task_list, initial_actions_list, completion_event, model_source, modelname, controller), update_logs(log_placeholder, completion_event))
                         )
                         listHistoryAgents = results[0]  # Get the results from the first coroutine
                     timeTaken = time.time() - tStart
@@ -381,7 +388,10 @@ def main():
                                             st.markdown(f"[View Product]({item['url_product']})")
                                             st.markdown(f"**Material:** {item.get('material', 'N/A')}")
                                             available_sizes = item['available_sizes'] if item.get('available_sizes') is not None else []
-                                            st.markdown(f"**Available Sizes:** {', '.join(available_sizes)}")
+                                            if available_sizes is not None:
+                                                if len(available_sizes) > 0:
+                                                    available_sizes = [str(each) for each in available_sizes]
+                                                    st.markdown(f"**Available Sizes:** {', '.join(available_sizes)}")
                                         else:
                                             st.write(f"Image not available for {item['name']}")
                                 except:
