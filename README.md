@@ -13,5 +13,7 @@ playwright install
 
 # Usage
 ```bash
-streamlit run clothing-multibrowser.py
+streamlit run main.py
 ```
+
+<img src="./assets/streamlit.png" alt="StreamLit - Clothing Search App" width="500"/>

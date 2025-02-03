@@ -153,7 +153,9 @@ class Product(BaseModel):
     url_product: str
     color: str
     material: str
+    fit: str
     available_sizes: List[int]
+    other_properties: str
 
 class ProductList(BaseModel):
     site_name: str
@@ -301,7 +303,7 @@ def main():
                     tasks = [
                         # f"""Search for '{query}' of size {size} for {sex} on {website}.
                         f"""Open {website}, reject all cookies (if prompted) and convert language to English. If you cannot convert language to English, then just proceed.
-                        Then find the search bar, input the search term = '{query}' and hit Enter. 
+                        Then find the search bar, input the search term = '{query}' and hit Enter. if the search bar cannot be found, move on to the next step.
                         Then filter with size={size} and sex={sex}.
                         Look at the top {result_count} results and visit the webpage for each item.
                         Parse these items' webpages and return a .json with the primary keys as 'site_name' and 'products'. 
@@ -401,7 +403,7 @@ if __name__ == "__main__":
 
 """
 To run
- - streamlit run clothing-multibrowser.py
+ - streamlit run main.py
  - ollama pull llama3.2 : http://localhost:11434/
  - ollama list
 """
