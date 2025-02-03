@@ -20,11 +20,13 @@ load_dotenv()
 # Constants
 ENV_GEMINI_API_KEY = "GEMINI_API_KEY"
 ENV_BROWSERBASE_API_KEY = "BROWSERBASE_API_KEY"
+ENV_STEEL_API_KEY = "STEEL_API_KEY"
 
 # Create a browser instance
 browser = Browser(
     config=BrowserConfig(
         cdp_url=f"wss://connect.browserbase.com?apiKey={os.getenv(ENV_BROWSERBASE_API_KEY)}"
+        # cdp_url=f"wss://connect.steel.dev?apiKey={os.getenv(ENV_STEEL_API_KEY)}"
     )
 )
 

@@ -16,14 +16,16 @@ import subprocess
 import traceback
 from pathlib import Path
 from io import StringIO
-from pydantic import SecretStr
+from typing import List
+from pydantic import SecretStr, BaseModel
 from urllib.parse import urlparse
 
 # Third-party packages
 import openai
 import streamlit as st
 from dotenv import load_dotenv # loads from .env file containing OPENAI_API_KEY=''
-from browser_use import Agent
+from browser_use import Agent, Browser, BrowserConfig, Controller
+from browser_use.browser.context import BrowserContext, BrowserContextConfig
 from langchain_openai import ChatOpenAI
 from langchain_ollama import ChatOllama
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -50,9 +52,18 @@ KEY_GOOGLE_GEMINI = "Google Gemini"
 KEY_OLLAMA = "Ollama (local)"
 ENV_OPENAI_API_KEY = "OPENAI_API_KEY"
 ENV_GEMINI_API_KEY = "GEMINI_API_KEY"
+ENV_BROWSERBASE_API_KEY = "BROWSERBASE_API_KEY"
+ENV_STEEL_API_KEY = "STEEL_API_KEY"
 
 OLLAMA_MODEL_LLAMA32 = "llama3.2"
 OLLAMA_MODEL_MISTRAL = "mistral"
+
+# Step 0.4 - Browser Config
+browserObj = Browser(config=BrowserConfig(
+        cdp_url=f"wss://connect.browserbase.com?apiKey={os.getenv(ENV_BROWSERBASE_API_KEY)}"
+        # cdp_url=f"wss://connect.steel.dev?apiKey={os.getenv(ENV_STEEL_API_KEY)}"
+    )
+) # headless=True leads to websites not opening
 
 ###################################################
 # UTILS
@@ -119,11 +130,40 @@ def get_ollama_models():
 
     return ollama_models
 
+def run_playwright_with_xvfb():
+    """
+    NOTE: have not tried this yet
+    """
+    try:
+        result = subprocess.run(["xvfb-run", "python3", "playwright_script.py"], capture_output=True, text=True)
+        print(result.stdout)
+        if result.returncode != 0:
+            print(f"Error running Playwright script: {result.stderr}")
+    except Exception as e:
+        print(f"Exception running Playwright script: {e}")
+
+###################################################
+# CONTROLLER
+###################################################
+# Output controller
+class Product(BaseModel):
+    name: str
+    price: float
+    url_image: str
+    url_product: str
+    color: str
+    material: str
+    available_sizes: List[int]
+
+class ProductList(BaseModel):
+    site_name: str
+    products: List[Product]
+
 ###################################################
 # AGENTS
 ###################################################
 
-async def run_agent(task, model_source, modelname):
+async def run_agent(task, model_source, modelname, controller):
 
     result = None
 
@@ -136,7 +176,7 @@ async def run_agent(task, model_source, modelname):
         elif model_source == KEY_GOOGLE_GEMINI:
             llm = ChatGoogleGenerativeAI(model=modelname, api_key=SecretStr(os.getenv(ENV_GEMINI_API_KEY)))
 
-        agent = Agent(task=task,llm=llm, max_failures=10) # use_vision=True,
+        agent = Agent(task=task,llm=llm, max_failures=10, browser=browserObj, controller=controller) # use_vision=True,
         result = await agent.run()
 
         logging.info(f"\n\n ====================== [model={model_source, modelname}] Completed task: {task} \n\n")
@@ -146,8 +186,8 @@ async def run_agent(task, model_source, modelname):
 
     return result
 
-async def run_agents(tasks, completion_event, model_source, modelname):
-    listHistoryAgents = await asyncio.gather(*[run_agent(task, model_source, modelname) for task in tasks])
+async def run_agents(tasks, completion_event, model_source, modelname, controller):
+    listHistoryAgents = await asyncio.gather(*[run_agent(task, model_source, modelname, controller) for task in tasks])
     completion_event.set()
     print ('\n - [DEBUG] I have finished all the agents')
     return listHistoryAgents
@@ -168,7 +208,13 @@ def main():
     ## ---------------- Step 1 - Streamlit UI (Sidebar)
     if 1:
         ## ---------------- Step 1.1 - Streamlit UI (title)
-        st.title("Clothing Search App")
+        st.set_page_config(
+            page_title="Clothing Search App",  # Tab name
+            page_icon="👗",  # Optional: Tab icon
+            layout="centered",  # Optional: Layout of the page ("centered" or "wide")
+            initial_sidebar_state="expanded",  # Optional: Initial state of the sidebar ("expanded" or "collapsed")
+        )
+        # st.title("Clothing Search App")
 
         ## ---------------- Step 1.2 - Streamlit UI (get model)
         models_ollama = get_ollama_models()
@@ -222,7 +268,7 @@ def main():
             size = st.selectbox("Select size:", ["S", "M", "L"])
             sex = st.radio("Select sex:", ["Male", "Female", "Unisex"])
             websites = st.multiselect("Select websites to query:", ["zalando.nl", "hm.com", "zara.nl"])
-            result_count = st.slider("Number of results:", 5, 15, 5)
+            result_count = st.slider("Number of results:", 1, 15, 1)
             if model_source == KEY_OPENAI:
                 st.session_state.model_list_openai = get_models_openai()
                 model_idx = st.session_state.model_list_openai.index("gpt-4o-mini")
@@ -255,7 +301,7 @@ def main():
                     tasks = [
                         # f"""Search for '{query}' of size {size} for {sex} on {website}.
                         f"""Open {website}, reject all cookies (if prompted) and convert language to English. If you cannot convert language to English, then just proceed.
-                        Then find the search bar and input the search term = '{query}'. 
+                        Then find the search bar, input the search term = '{query}' and hit Enter. 
                         Then filter with size={size} and sex={sex}.
                         Look at the top {result_count} results and visit the webpage for each item.
                         Parse these items' webpages and return a .json with the primary keys as 'site_name' and 'products'. 
@@ -267,6 +313,8 @@ def main():
                         for website in websites
                     ]
 
+                    controller = Controller(output_model=ProductList)
+
                 ## ---------------- Step 5.1 - Run agents
                 if len(debugOutput) == 0:
                     log_placeholder = st.empty()
@@ -276,7 +324,7 @@ def main():
                         loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(loop)
                         results = loop.run_until_complete(
-                            asyncio.gather(run_agents(tasks, completion_event, model_source, modelname), update_logs(log_placeholder, completion_event))
+                            asyncio.gather(run_agents(tasks, completion_event, model_source, modelname, controller), update_logs(log_placeholder, completion_event))
                         )
                         listHistoryAgents = results[0]  # Get the results from the first coroutine
                     timeTaken = time.time() - tStart
