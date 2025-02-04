@@ -22,6 +22,7 @@ from urllib.parse import urlparse
 
 # Third-party packages
 import openai
+import websockets
 import streamlit as st
 from dotenv import load_dotenv # loads from .env file containing OPENAI_API_KEY=''
 from browser_use import Agent, Browser, BrowserConfig, Controller
@@ -50,20 +51,30 @@ if len(DEBUG_JSON_PATHS) > 0:
 KEY_OPENAI = "Open AI"
 KEY_GOOGLE_GEMINI = "Google Gemini"
 KEY_OLLAMA = "Ollama (local)"
+KEY_OLLAMA_NA = "Ollama (local) - Not available"
 ENV_OPENAI_API_KEY = "OPENAI_API_KEY"
 ENV_GEMINI_API_KEY = "GEMINI_API_KEY"
 ENV_BROWSERBASE_API_KEY = "BROWSERBASE_API_KEY"
 ENV_STEEL_API_KEY = "STEEL_API_KEY"
+ENV_ANCHOR_API_KEY = "ANCHOR_API_KEY"
 
-OLLAMA_MODEL_LLAMA32 = "llama3.2"
-OLLAMA_MODEL_MISTRAL = "mistral"
+MODEL_OLLAMA_LLAMA32 = "llama3.2"
+MODEL_OLLAMA_MISTRAL = "mistral"
+MODEL_GPT_4O = 'gpt-4o'
+MODEL_GEMINI_2_FLASH_EXP = "gemini-2.0-flash-exp"
+
+KEY_BROWSER_CHROMIUM = "Chromium (local)"
+KEY_BROWSER_BROWSERBASE = "Browserbase"
+KEY_BROWSER_STEEL = "Steel.dev"
+KEY_BROWSER_ANCHOR = "AnchorBrowser"
 
 # Step 0.4 - Browser Config
-browserObj = Browser(config=BrowserConfig(
-        cdp_url=f"wss://connect.browserbase.com?apiKey={os.getenv(ENV_BROWSERBASE_API_KEY)}"
-        # cdp_url=f"wss://connect.steel.dev?apiKey={os.getenv(ENV_STEEL_API_KEY)}"
-    )
-) # headless=True leads to websites not opening
+# browserObj = Browser(config=BrowserConfig(
+#         # cdp_url=f"wss://connect.browserbase.com?apiKey={os.getenv(ENV_BROWSERBASE_API_KEY)}" ## https://www.browserbase.com/overview
+#         cdp_url=f"wss://connect.steel.dev?apiKey={os.getenv(ENV_STEEL_API_KEY)}" ## https://app.steel.dev/settings/usage
+#         # cdp_url=f"wss://connect.anchorbrowser.io?apiKey={os.getenv(ENV_ANCHOR_API_KEY)}" ## https://app.anchorbrowser.io/sessions
+#     )
+# ) # headless=True leads to websites not opening
 
 ###################################################
 # UTILS
@@ -142,6 +153,174 @@ def run_playwright_with_xvfb():
     except Exception as e:
         print(f"Exception running Playwright script: {e}")
 
+def check_websocket_url(url):
+    try:
+        with websockets.connect(url) as websocket:
+            websocket.send("ping")
+            response = websocket.recv()
+            return True
+    except Exception as e:
+        print(f"Error connecting to WebSocket URL: {e}")
+        return False
+
+def show_selectionui_check(verbose=False):
+
+    if st.session_state.model_source is None or st.session_state.model_name is None or st.session_state.browser_obj is None:
+        if st.session_state.model_source is None:
+            if verbose:
+                st.sidebar.markdown('---')
+                st.sidebar.error("Please select a model source.")
+        else:
+            if st.session_state.model_name is None:
+                if verbose: st.sidebar.error("Please select a model name.")
+        if st.session_state.browser_obj is None:
+            st.sidebar.markdown('---')
+            if verbose: st.sidebar.error("Please select a browser.")
+        return False
+    else:
+        return True
+
+def extract_json(text):
+    """
+    Extract JSON from text
+    """
+    try:
+        json_str = text[text.find("{"):text.rfind("}")+1]
+        if len(json_str) == 0:
+            return {}
+        return json.loads(json_str)
+    except:
+        return {}
+
+###################################################
+# MODELS AND BROWSER SELECTION
+###################################################
+
+def set_model_source_and_name():
+
+    try:
+        
+        models_ollama = get_ollama_models()
+        st.session_state.model_source = st.sidebar.selectbox("Select model source:", [KEY_OPENAI, KEY_GOOGLE_GEMINI] + ([KEY_OLLAMA] if len(models_ollama) else [KEY_OLLAMA_NA]), index=None)
+
+        if st.session_state.model_source == KEY_OPENAI:
+            if os.getenv(ENV_OPENAI_API_KEY) is None:
+                st.sidebar.markdown('---')
+                st.sidebar.error("Please set the OPENAI_API_KEY environment variable.")
+                key = st.sidebar.text_input("Enter your OpenAI API key:", type="password")
+                st.sidebar.markdown('---')
+                if key:
+                    model_list = is_valid_openai_api_key(key)
+                    if len(model_list):
+                        os.environ[ENV_OPENAI_API_KEY] = key
+                        # set model_list in streamlit cache
+                        st.session_state.model_list_openai = model_list
+                        st.sidebar.success("OpenAI API key set successfully.")
+                        st.rerun()
+                    else:
+                        st.sidebar.error("Invalid OpenAI API key.")
+            else:
+                st.session_state.model_list_openai = get_models_openai()
+                model_idx = st.session_state.model_list_openai.index(MODEL_GPT_4O)
+                st.session_state.model_name = st.sidebar.selectbox("Select model:", st.session_state.model_list_openai, index=model_idx)
+
+        elif st.session_state.model_source == KEY_GOOGLE_GEMINI:
+            st.session_state.model_list_openai = [MODEL_GEMINI_2_FLASH_EXP]
+            if os.getenv(ENV_GEMINI_API_KEY) is None:
+                st.sidebar.markdown('---')
+                st.sidebar.error("Please set the GEMINI_API_KEY environment variable.")
+                key = st.sidebar.text_input("Enter your Google Gemini API key:", type="password")
+                st.sidebar.markdown('---')
+                if key:
+                    os.environ[ENV_GEMINI_API_KEY] = key
+                    st.sidebar.success("Google Gemini API key set successfully.")
+                    st.rerun()
+            else:
+                model_idx = st.session_state.model_list_openai.index(MODEL_GEMINI_2_FLASH_EXP)
+                st.session_state.model_name = st.sidebar.selectbox("Select model:", st.session_state.model_list_openai, index=model_idx)
+
+        elif st.session_state.model_source == KEY_OLLAMA:
+            models_ollama = get_ollama_models()
+            st.session_state.model_list_ollama = models_ollama
+            model_idx = st.session_state.model_list_ollama.index(MODEL_OLLAMA_LLAMA32)
+            st.session_state.model_name = st.sidebar.selectbox("Select model:", st.session_state.model_list_ollama, index=model_idx)
+        
+        else:
+            st.session_state.model_name = None
+
+    except:
+        traceback.print_exc()
+
+def set_browser():
+
+    try:
+        
+        st.sidebar.markdown('---')
+        browser_source = st.sidebar.selectbox("Select browser source:", [KEY_BROWSER_CHROMIUM, KEY_BROWSER_BROWSERBASE, KEY_BROWSER_STEEL, KEY_BROWSER_ANCHOR], index=None)
+        
+        if browser_source == KEY_BROWSER_CHROMIUM:
+            st.session_state.browser_obj = Browser(config=BrowserConfig())
+            st.session_state.browser_choice_valid = True
+
+        elif browser_source == KEY_BROWSER_BROWSERBASE:
+            browser_obj_url = f"wss://connect.browserbase.com?apiKey={os.getenv(ENV_BROWSERBASE_API_KEY)}"
+            if os.getenv(ENV_BROWSERBASE_API_KEY) is None:
+                st.sidebar.error("Please set the BROWSERBASE_API_KEY environment variable.")
+                key = st.sidebar.text_input("Enter your Browserbase API key:", type="password")
+                if key:
+                    if check_websocket_url(browser_obj_url):
+                        os.environ[ENV_BROWSERBASE_API_KEY] = key
+                        st.sidebar.success("Browserbase API key set successfully.")
+                    else:
+                        st.sidebar.error("Invalid Browserbase API key.")
+                    st.rerun()
+            else:
+                st.session_state.browser_obj = Browser(config=BrowserConfig(
+                    cdp_url=browser_obj_url
+                ))
+
+        elif browser_source == KEY_BROWSER_STEEL:
+            browser_obj_url = f"wss://connect.steel.dev?apiKey={os.getenv(ENV_STEEL_API_KEY)}"
+            if os.getenv(ENV_STEEL_API_KEY) is None:
+                
+                st.sidebar.error("Please set the STEEL_API_KEY environment variable.")
+                key = st.sidebar.text_input("Enter your Steel.dev API key:", type="password")
+                if key:
+                    if check_websocket_url(browser_obj_url):
+                        os.environ[ENV_STEEL_API_KEY] = key
+                        st.sidebar.success("Steel.dev API key set successfully.")
+                    else:
+                        st.sidebar.error("Invalid Steel.dev API key.")
+                    st.rerun()
+            else:
+                st.session_state.browser_obj = Browser(config=BrowserConfig(
+                    cdp_url=browser_obj_url
+                ))
+
+        elif browser_source == KEY_BROWSER_ANCHOR:
+            browser_obj_url = f"wss://connect.anchorbrowser.io?apiKey={os.getenv(ENV_ANCHOR_API_KEY)}"
+            if os.getenv(ENV_ANCHOR_API_KEY) is None:
+                st.sidebar.error("Please set the ANCHOR_API_KEY environment variable.")
+                key = st.sidebar.text_input("Enter your AnchorBrowser API key:", type="password")
+                if key:
+                    if check_websocket_url(browser_obj_url):
+                        os.environ[ENV_ANCHOR_API_KEY] = key
+                        st.sidebar.success("AnchorBrowser API key set successfully.")
+                    else:
+                        st.sidebar.error("Invalid AnchorBrowser API key.")
+                    st.rerun()
+            else:
+                st.session_state.browser_obj = Browser(config=BrowserConfig(
+                    cdp_url=browser_obj_url
+                ))
+
+        else:
+            st.session_state.browser_obj = None
+
+    except:
+        traceback.print_exc()
+        pdb.set_trace()
+
 ###################################################
 # CONTROLLER
 ###################################################
@@ -165,37 +344,53 @@ class ProductList(BaseModel):
 # AGENTS
 ###################################################
 
-async def run_agent(task, initial_actions, model_source, modelname, controller):
+async def run_agent(task, initial_actions, controller):
 
     result = None
 
     try:
-        logging.info(f"\n\n ====================== [model={model_source, modelname}] Starting task: {task} \n\n")
-        if model_source == KEY_OPENAI:
-            llm = ChatOpenAI(model=modelname, timeout=90000) # model="gpt-4o-mini", "gpt-4o", "gpt-4o-turbo
-        elif model_source == KEY_OLLAMA:
-            llm = ChatOllama(model=modelname, num_ctx=32000)
-        elif model_source == KEY_GOOGLE_GEMINI:
-            llm = ChatGoogleGenerativeAI(model=modelname, api_key=SecretStr(os.getenv(ENV_GEMINI_API_KEY)))
+        logging.info(f"\n\n ====================== [model={st.session_state.model_source, st.session_state.model_name}] Starting task: {task} \n\n")
+        if st.session_state.model_source == KEY_OPENAI:
+            llm = ChatOpenAI(model=st.session_state.model_name, timeout=90000) # model="gpt-4o-mini", "gpt-4o", "gpt-4o-turbo
+        elif st.session_state.model_source == KEY_OLLAMA:
+            llm = ChatOllama(model=st.session_state.model_name, num_ctx=32000)
+        elif st.session_state.model_source == KEY_GOOGLE_GEMINI:
+            llm = ChatGoogleGenerativeAI(model=st.session_state.model_name, api_key=SecretStr(os.getenv(ENV_GEMINI_API_KEY)))
 
         agent = Agent(task=task,llm=llm
-                      , max_failures=10, browser=browserObj
+                      , max_failures=10, browser=st.session_state.browser_obj
                       , controller=controller
                       , initial_actions=initial_actions
                       ) # use_vision=True,
         result = await agent.run()
 
-        logging.info(f"\n\n ====================== [model={model_source, modelname}] Completed task: {task} \n\n")
+        logging.info(f"\n\n ====================== [model={st.session_state.model_source, st.session_state.model_name}] Completed task: {task} \n\n")
 
     except:
         traceback.print_exc()
 
     return result
 
-async def run_agents(task_list, initial_actions_list, completion_event, model_source, modelname, controller):
-    listHistoryAgents = await asyncio.gather(*[run_agent(task, initial_actions_list[taskId], model_source, modelname, controller) for taskId, task in enumerate(task_list)])
+async def run_agents(task_list, initial_actions_list, completion_event, controller):
+    
+    # Step 1 - Run agents
+    tasks = [run_agent(task, initial_actions_list[taskId], controller) for taskId, task in enumerate(task_list)]
+    
+    # Step 2 - Cancel Agents (if needed)
+    if st.session_state.cancel_agents:
+        for task in tasks:
+            task.cancel()
+        print ('\n - [DEBUG] I have cancelled all the agents')
+        st.write("Search cancelled.")
+    
+    # Step 3 - Gather output
+    listHistoryAgents = await asyncio.gather(*tasks)
+
+    # Step 4 - Set completion event
     completion_event.set()
     print ('\n - [DEBUG] I have finished all the agents')
+
+    # Step 99 - Return results
     return listHistoryAgents
 
 async def update_logs(log_placeholder, completion_event):
@@ -213,85 +408,49 @@ def main():
 
     ## ---------------- Step 1 - Streamlit UI (Sidebar)
     if 1:
+
         ## ---------------- Step 1.1 - Streamlit UI (title)
-        st.set_page_config(
-            page_title="Clothing Search App",  # Tab name
-            page_icon="👗",  # Optional: Tab icon
-            layout="centered",  # Optional: Layout of the page ("centered" or "wide")
-            initial_sidebar_state="expanded",  # Optional: Initial state of the sidebar ("expanded" or "collapsed")
-        )
-        st.title("Clothing Search App")
+        if 1:
+            st.set_page_config(
+                page_title="Clothing Search App",  # Tab name
+                page_icon="👗",  # Optional: Tab icon
+                layout="centered",  # Optional: Layout of the page ("centered" or "wide")
+                initial_sidebar_state="expanded",  # Optional: Initial state of the sidebar ("expanded" or "collapsed")
+            )
+            st.title("Clothing Search App")
 
-        ## ---------------- Step 1.2 - Streamlit UI (get model)
-        models_ollama = get_ollama_models()
-        model_source = st.sidebar.selectbox("Select model source:", [KEY_OPENAI, KEY_GOOGLE_GEMINI] + ([KEY_OLLAMA] if len(models_ollama) else []))
-        st.session_state.model_source_valid = False
+            # Step 1.2 - Streamlit sessions
+            st.session_state.model_source = None
+            st.session_state.model_name = None
+            st.session_state.browser_obj = None
+            if 'cancel_agents' not in st.session_state:
+                st.session_state.cancel_agents = False
 
-        if model_source == KEY_OPENAI:
-            if os.getenv(ENV_OPENAI_API_KEY) is None:
-                st.sidebar.markdown('---')
-                st.sidebar.error("Please set the OPENAI_API_KEY environment variable.")
-                key = st.sidebar.text_input("Enter your OpenAI API key:", type="password")
-                st.sidebar.markdown('---')
-                if key:
-                    model_list = is_valid_openai_api_key(key)
-                    if len(model_list):
-                        os.environ[ENV_OPENAI_API_KEY] = key
-                        # set model_list in streamlit cache
-                        st.session_state.model_list_openai = model_list
-                        st.session_state.model_source_valid = True
-                        st.sidebar.success("OpenAI API key set successfully.")
-                        st.rerun()
-                    else:
-                        st.sidebar.error("Invalid OpenAI API key.")
-            else:
-                st.session_state.model_list_openai = get_models_openai()
-                st.session_state.model_source_valid = True
-
-        elif model_source == KEY_GOOGLE_GEMINI:
-            st.session_state.model_list_openai = ["gemini-2.0-flash-exp"]
-            if os.getenv(ENV_GEMINI_API_KEY) is None:
-                st.sidebar.markdown('---')
-                st.sidebar.error("Please set the GEMINI_API_KEY environment variable.")
-                key = st.sidebar.text_input("Enter your Google Gemini API key:", type="password")
-                st.sidebar.markdown('---')
-                if key:
-                    os.environ[ENV_GEMINI_API_KEY] = key
-                    st.session_state.model_source_valid = True
-                    st.sidebar.success("Google Gemini API key set successfully.")
-                    st.rerun()
-            else:
-                st.session_state.model_source_valid = True
-
-        elif model_source == KEY_OLLAMA:
-            st.session_state.model_list_ollama = models_ollama
-            st.session_state.model_source_valid = True
-
-        ## ---------------- Step 1.3 - Streamlit UI (User input)
-        if st.session_state.model_source_valid:
+        ## ---------------- Step 1.2 - Streamlit UI (get model and browser)
+        if 1:
             
+            set_model_source_and_name()
+            set_browser()
+            
+        ## ---------------- Step 1.99 - Streamlit UI (User input)
+        if show_selectionui_check(verbose=True):
             query = st.text_input("Enter your query:", help="e.g. 'black t-shirt, gray pantaloons, jumpsuit, troyer collar etc'")
             size = st.selectbox("Select size:", ["S", "M", "L"])
             sex = st.radio("Select sex:", ["Male", "Female", "Unisex"])
             websites = st.multiselect("Select websites to query:", ["https://www.zalando.nl", "https://www.hm.com", "https://www.zara.nl"])
             result_count = st.slider("Number of results:", 1, 15, 1)
-            if model_source == KEY_OPENAI:
-                st.session_state.model_list_openai = get_models_openai()
-                model_idx = st.session_state.model_list_openai.index("gpt-4o-mini")
-                modelname = st.selectbox("Select model:", st.session_state.model_list_openai, index=model_idx)
-            elif model_source == KEY_GOOGLE_GEMINI:
-                model_idx = st.session_state.model_list_openai.index("gemini-2.0-flash-exp")
-                modelname = st.selectbox("Select model:", st.session_state.model_list_openai, index=model_idx)
-            elif model_source == KEY_OLLAMA:
-                model_idx = st.session_state.model_list_ollama.index(OLLAMA_MODEL_LLAMA32)
-                modelname = st.selectbox("Select model:", st.session_state.model_list_ollama, index=model_idx)
 
     ## ---------------- Step 2 - Streamlit UI (Search button)
-    if st.session_state.model_source_valid:
-    
-        if st.button("Search"):
+    if show_selectionui_check(verbose=False):
+        
+        if st.button("Cancel"):
+            st.session_state.cancel_agents = True
 
-            print (f'\n\n ================ modelname={modelname} ================= \n\n')
+        if st.button("Search", use_container_width=True):
+
+            st.session_state.cancel_agents = False
+
+            print (f'\n\n ================================= \n\n')
             print (' - [INFO] query:', query)
             print (' - [INFO] size:', size)
             print (' - [INFO] sex: ', sex)
@@ -309,6 +468,7 @@ def main():
                         f"""Open {website}, reject all cookies (if prompted) and convert language to English. If you cannot convert language to English, then just proceed.
                         Then find the search bar, input the search term = '{query}' and hit Enter. if the search bar cannot be found, move on to the next step.
                         Then filter with size={size} and sex={sex}.
+
                         Look at the top {result_count} results and visit the webpage for each item.
                         Parse these items' webpages and ensure that it matches the search term = '{query}'. 
                         Then return a .json with the primary keys as 'site_name' and 'products'. 
@@ -316,6 +476,8 @@ def main():
                         'name', 'url_product', 'url_image', 'price', 'color', 'material', 'available_sizes', 'fit' and 'other_properties'. 
                         Refine the results for color, material, available sizes, and other properties by opening each products page.
                         Ignore delivery, return, care instructions, reviews, and other irrelevant information.
+                        
+                        Also, dont scroll too much to filter with size={size} and sex={sex}. These are usually present on the top (or left-side) of the page
                         """
                         for website in websites
                     ]
@@ -333,11 +495,13 @@ def main():
                         loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(loop)
                         results = loop.run_until_complete(
-                            asyncio.gather(run_agents(task_list, initial_actions_list, completion_event, model_source, modelname, controller), update_logs(log_placeholder, completion_event))
+                            asyncio.gather(run_agents(task_list, initial_actions_list, completion_event, controller), update_logs(log_placeholder, completion_event))
                         )
                         listHistoryAgents = results[0]  # Get the results from the first coroutine
+                        print ('\n\n ========== \n listHistoryAgents: ', listHistoryAgents, '\n\n ==========\n\n')
                     timeTaken = time.time() - tStart
                     st.write(f"Time taken: {timeTaken:.2f} seconds")
+                    st.markdown('---')
 
                 ## ---------------- Step 5.2 - Combine agent results
                 combined_results = {}
@@ -345,11 +509,16 @@ def main():
                     
                     print ('\n\n ================ Parsing results ================= \n\n')
                     for historyAgentObj in listHistoryAgents: # type(result) == browser_use.agent.views.AgentHistoryList
+                        if historyAgentObj is None:
+                            print (' - [INFO] historyAgentObj is None. Skipping')
+                            continue
+
                         resultObjList = historyAgentObj.action_results()
                         print (f'\n\n ================ resultObj (len={len(resultObjList)}) ================= \n\n')
                         for stepId, actionResult in enumerate(resultObjList):
                             try:
                                 print (f' - [step={stepId+1}] done: {actionResult.is_done}')
+                                
                                 if actionResult.is_done:
                                     print (f'   -- [step={stepId+1}] done: {actionResult.is_done}')
                                     actionJson = json.loads(actionResult.extracted_content)
@@ -357,6 +526,10 @@ def main():
                                     print (f'\n\n ---------- {siteName} ---------- \n\n')
                                     pprint.pprint(actionJson)
                                     combined_results[siteName] = actionJson["products"]
+                                else:
+                                    # sometimes the JSON is there but just not with is_done=True
+                                    stepContentJSON = extract_json(actionResult.extracted_content)
+                                    pprint.pprint(stepContentJSON)
                                 
                             except:
                                 pass
@@ -410,23 +583,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-"""
-To run
- - streamlit run main.py
- - ollama pull llama3.2 : http://localhost:11434/
- - ollama list
-"""
-"""
->> python
-from langchain_ollama import ChatOllama
-llm=ChatOllama(model="llama3.2", num_ctx=32000) # llama3.2, mistral
-messages = [ ( "system", "You are a helpful assistant that translates English to French. Translate the user sentence.", ), ("human", "I love programming."), ]
-llm.invoke(messages)
-"""
-"""
-To-check
-- https://github.com/emmetify/emmetify-py
-- https://github.com/browser-use/browser-use/blob/0.1.34/docs/customize/output-format.mdx
-- initial_actions
-"""
