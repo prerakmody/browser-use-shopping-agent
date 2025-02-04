@@ -542,7 +542,6 @@ def main():
                 st.json(combined_results, expanded=False)
                 
                 ## ---------------- Step 6 - Display results
-                pdb.set_trace()
                 if 1:
 
                     num_columns = 3  # Number of columns in the grid

@@ -41,3 +41,4 @@ streamlit run main.py
 
 # Future Stuff
 1. [P] https://github.com/emmetify/emmetify-py
+2. [P] Track the steps of the agent, specifically the "Eval" and "Next Goal" parts
