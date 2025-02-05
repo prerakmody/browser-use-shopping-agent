@@ -68,13 +68,15 @@ KEY_BROWSER_BROWSERBASE = "Browserbase"
 KEY_BROWSER_STEEL = "Steel.dev"
 KEY_BROWSER_ANCHOR = "AnchorBrowser"
 
-# Step 0.4 - Browser Config
-# browserObj = Browser(config=BrowserConfig(
-#         # cdp_url=f"wss://connect.browserbase.com?apiKey={os.getenv(ENV_BROWSERBASE_API_KEY)}" ## https://www.browserbase.com/overview
-#         cdp_url=f"wss://connect.steel.dev?apiKey={os.getenv(ENV_STEEL_API_KEY)}" ## https://app.steel.dev/settings/usage
-#         # cdp_url=f"wss://connect.anchorbrowser.io?apiKey={os.getenv(ENV_ANCHOR_API_KEY)}" ## https://app.anchorbrowser.io/sessions
-#     )
-# ) # headless=True leads to websites not opening
+ENV_KEY_PRODUCTION = "PRODUCTION"
+
+BOOL_PRODUCTION = True
+if os.getenv(ENV_KEY_PRODUCTION) is not None:
+    if os.getenv(ENV_KEY_PRODUCTION) == "False":
+        BOOL_PRODUCTION = False
+        print ('\n\n ===================================')
+        print (" - [INFO] Running in DEBUG mode")
+        print (' =================================== \n\n')
 
 ###################################################
 # UTILS
@@ -88,58 +90,9 @@ def install_playwright_browsers():
     except subprocess.CalledProcessError as e:
         print(f"Error installing Playwright browsers: {e}")
 
-install_playwright_browsers()
+if not BOOL_PRODUCTION:
+    install_playwright_browsers()
 
-def is_valid_url(url):
-    try:
-        result = urlparse(url)
-        return all([result.scheme, result.netloc])
-    except ValueError:
-        return False
-
-def is_valid_openai_api_key(api_key):
-    
-    model_list = []
-    try:
-        openai.api_key = api_key
-        model_list = openai.models.list() # Make a simple request to check the validity of the API key (https://platform.openai.com/settings/organization/limits)
-        model_list = sorted([each.id for each in model_list.data])
-    except:
-        return []
-    
-    return model_list
-
-def get_models_openai():
-
-    model_list = []    
-    try:
-        model_list = sorted(st.session_state.model_list_openai)
-        
-    except:
-        return is_valid_openai_api_key(os.getenv('OPENAI_API_KEY'))
-
-    return model_list
-
-def get_ollama_models():
-    """
-    NAME               ID              SIZE      MODIFIED
-    mistral:latest     f974a74358d6    4.1 GB    3 minutes ago
-    llama3.2:latest    a80c4f17acd5    2.0 GB    28 minutes ago
-    """
-
-    ollama_models = []
-
-    try:
-        result = subprocess.run(['ollama', 'list'], capture_output=True, text=True)
-        if result.returncode == 0:
-            ollama_list = result.stdout.splitlines()
-            ollama_models = [each.split(' ')[0].split(':latest')[0] for each in ollama_list[1:]]
-    
-    except Exception as e:
-        print(f"Error running 'ollama list': {e}")
-        return []
-
-    return ollama_models
 
 def run_playwright_with_xvfb():
     """
@@ -196,12 +149,52 @@ def extract_json(text):
 # MODELS AND BROWSER SELECTION
 ###################################################
 
+def is_valid_url(url):
+    try:
+        result = urlparse(url)
+        return all([result.scheme, result.netloc])
+    except ValueError:
+        return False
+
+def is_valid_openai_api_key(api_key):
+    
+    model_list = []
+    try:
+        openai.api_key = api_key
+        model_list = openai.models.list() # Make a simple request to check the validity of the API key (https://platform.openai.com/settings/organization/limits)
+        model_list = sorted([each.id for each in model_list.data])
+    except:
+        return []
+    
+    return model_list
+
+def get_ollama_models():
+    """
+    NAME               ID              SIZE      MODIFIED
+    mistral:latest     f974a74358d6    4.1 GB    3 minutes ago
+    llama3.2:latest    a80c4f17acd5    2.0 GB    28 minutes ago
+    """
+
+    ollama_models = []
+
+    try:
+        result = subprocess.run(['ollama', 'list'], capture_output=True, text=True)
+        if result.returncode == 0:
+            ollama_list = result.stdout.splitlines()
+            ollama_models = [each.split(' ')[0].split(':latest')[0] for each in ollama_list[1:]]
+    
+    except Exception as e:
+        print(f"Error running 'ollama list': {e}")
+        return []
+
+    return ollama_models
+
 def set_model_source_and_name():
 
     try:
         
-        models_ollama = get_ollama_models()
-        st.session_state.model_source = st.sidebar.selectbox("Select model source:", [KEY_OPENAI, KEY_GOOGLE_GEMINI] + ([KEY_OLLAMA] if len(models_ollama) else [KEY_OLLAMA_NA]), index=None)
+        st.session_state.model_names_ollama = get_ollama_models()
+        st.session_state.model_source = st.sidebar.selectbox("Select model source:", [KEY_OPENAI, KEY_GOOGLE_GEMINI] + ([KEY_OLLAMA] if len(st.session_state.model_names_ollama) else [KEY_OLLAMA_NA]), index=None)
 
         if st.session_state.model_source == KEY_OPENAI:
             if os.getenv(ENV_OPENAI_API_KEY) is None:
@@ -213,19 +206,22 @@ def set_model_source_and_name():
                     model_list = is_valid_openai_api_key(key)
                     if len(model_list):
                         os.environ[ENV_OPENAI_API_KEY] = key
-                        # set model_list in streamlit cache
-                        st.session_state.model_list_openai = model_list
+                        st.session_state.model_names_openai = model_list
                         st.sidebar.success("OpenAI API key set successfully.")
                         st.rerun()
                     else:
                         st.sidebar.error("Invalid OpenAI API key.")
             else:
-                st.session_state.model_list_openai = get_models_openai()
-                model_idx = st.session_state.model_list_openai.index(MODEL_GPT_4O)
-                st.session_state.model_name = st.sidebar.selectbox("Select model:", st.session_state.model_list_openai, index=model_idx)
+                if len(st.session_state.model_names_openai) == 0:
+                    st.session_state.model_names_openai = is_valid_openai_api_key(os.getenv(ENV_OPENAI_API_KEY))
+                try:
+                    model_idx = st.session_state.model_names_openai.index(MODEL_GPT_4O)
+                except:
+                    model_idx = None
+                st.session_state.model_name = st.sidebar.selectbox("Select model:", st.session_state.model_names_openai, index=model_idx)
 
         elif st.session_state.model_source == KEY_GOOGLE_GEMINI:
-            st.session_state.model_list_openai = [MODEL_GEMINI_2_FLASH_EXP]
+            st.session_state.model_names_gemini = [MODEL_GEMINI_2_FLASH_EXP]
             if os.getenv(ENV_GEMINI_API_KEY) is None:
                 st.sidebar.markdown('---')
                 st.sidebar.error("Please set the GEMINI_API_KEY environment variable.")
@@ -236,14 +232,18 @@ def set_model_source_and_name():
                     st.sidebar.success("Google Gemini API key set successfully.")
                     st.rerun()
             else:
-                model_idx = st.session_state.model_list_openai.index(MODEL_GEMINI_2_FLASH_EXP)
-                st.session_state.model_name = st.sidebar.selectbox("Select model:", st.session_state.model_list_openai, index=model_idx)
+                try:
+                    model_idx = st.session_state.model_names_gemini.index(MODEL_GEMINI_2_FLASH_EXP)
+                except:
+                    model_idx = None
+                st.session_state.model_name = st.sidebar.selectbox("Select model:", st.session_state.model_names_gemini, index=model_idx)
 
         elif st.session_state.model_source == KEY_OLLAMA:
-            models_ollama = get_ollama_models()
-            st.session_state.model_list_ollama = models_ollama
-            model_idx = st.session_state.model_list_ollama.index(MODEL_OLLAMA_LLAMA32)
-            st.session_state.model_name = st.sidebar.selectbox("Select model:", st.session_state.model_list_ollama, index=model_idx)
+            try:
+                model_idx = st.session_state.model_names_ollama.index(MODEL_OLLAMA_LLAMA32)
+            except:
+                model_idx = None
+            st.session_state.model_name = st.sidebar.selectbox("Select model:", st.session_state.model_names_ollama, index=model_idx)
         
         else:
             st.session_state.model_name = None
@@ -324,6 +324,7 @@ def set_browser():
 ###################################################
 # CONTROLLER
 ###################################################
+
 # Output controller
 class Product(BaseModel):
     name: str
@@ -344,12 +345,63 @@ class ProductList(BaseModel):
 # AGENTS
 ###################################################
 
-async def run_agent(task, initial_actions, controller):
+def extract_messages_from_history(agent, task_placeholder):
+    """
+    Parameters
+    ----------
+    agent : Agent
+        Agent object
+    task_placeholder : Streamlit placeholder (st.progress(), st.empty())
+    """
+
+    try:
+        
+        # Step 0 - Init
+        from langchain_core.messages import AIMessage
+
+        # Step 1 - Loop ove history messages
+        history_states = []
+        for message in agent.message_manager.history.messages:
+            if isinstance(message.message, AIMessage):
+                for tool_call in message.message.tool_calls:
+                    if tool_call['name'] == 'AgentOutput':
+                        current_state = tool_call['args']['current_state']
+                        history_states.append(current_state)
+
+        # Step 2 - Display current (i.e. latest) state
+        current_state = history_states[-1]
+        n_steps                  = agent.n_steps
+        page_summary             = current_state['page_summary']
+        evaluation_previous_goal = current_state['evaluation_previous_goal']
+        memory                   = current_state['memory']
+        next_goal                = current_state['next_goal']
+        current_state_str = f"""
+        - [INFO] n_steps                 : {n_steps}
+        - [INFO] page_summary            : {page_summary}
+        - [INFO] evaluation_previous_goal: {evaluation_previous_goal}
+        - [INFO] memory                  : {memory}
+        - [INFO] next_goal               : {next_goal}
+        """
+        task_placeholder[0].progress(n_steps)
+        task_placeholder[1].text(current_state_str)
+        print ('\n ---------------')
+        print (current_state_str)
+        print (' --------------- \n')
+
+    except:
+        traceback.print_exc()
+        pdb.set_trace()
+
+async def run_agent(task, initial_actions, controller, task_placeholder):
 
     result = None
 
     try:
+
+        # Step 0 - Init
         logging.info(f"\n\n ====================== [model={st.session_state.model_source, st.session_state.model_name}] Starting task: {task} \n\n")
+
+        # Step 1 - Initialize models
         if st.session_state.model_source == KEY_OPENAI:
             llm = ChatOpenAI(model=st.session_state.model_name, timeout=90000) # model="gpt-4o-mini", "gpt-4o", "gpt-4o-turbo
         elif st.session_state.model_source == KEY_OLLAMA:
@@ -357,24 +409,35 @@ async def run_agent(task, initial_actions, controller):
         elif st.session_state.model_source == KEY_GOOGLE_GEMINI:
             llm = ChatGoogleGenerativeAI(model=st.session_state.model_name, api_key=SecretStr(os.getenv(ENV_GEMINI_API_KEY)))
 
+        # Step 2 - Run agent
         agent = Agent(task=task,llm=llm
                       , max_failures=10, browser=st.session_state.browser_obj
                       , controller=controller
                       , initial_actions=initial_actions
                       ) # use_vision=True,
-        result = await agent.run()
+        
+        # Step 3 - Extract results from agent
+        try:
+            # NOTE: relies on .run() function doing "yield self.history" (instead of return self.history) AND also a yield None in "max_steps" for loop.
+            async for status in agent.run():
+                extract_messages_from_history(agent, task_placeholder)
+                result = status  # Capture the final result
+        except:
+            result = await agent.run()
 
+        # Step 99 - Close
         logging.info(f"\n\n ====================== [model={st.session_state.model_source, st.session_state.model_name}] Completed task: {task} \n\n")
 
     except:
         traceback.print_exc()
+        pdb.set_trace()
 
     return result
 
-async def run_agents(task_list, initial_actions_list, completion_event, controller):
+async def run_agents(task_list, initial_actions_list, completion_event, controller, task_placeholders):
     
     # Step 1 - Run agents
-    tasks = [run_agent(task, initial_actions_list[taskId], controller) for taskId, task in enumerate(task_list)]
+    tasks = [run_agent(task, initial_actions_list[taskId], controller, task_placeholders[taskId]) for taskId, task in enumerate(task_list)]
     
     # Step 2 - Cancel Agents (if needed)
     if st.session_state.cancel_agents:
@@ -422,6 +485,9 @@ def main():
             # Step 1.2 - Streamlit sessions
             st.session_state.model_source = None
             st.session_state.model_name = None
+            st.session_state.model_names_openai = []
+            st.session_state.model_names_gemini = []
+            st.session_state.model_names_ollama = []
             st.session_state.browser_obj = None
             if 'cancel_agents' not in st.session_state:
                 st.session_state.cancel_agents = False
@@ -465,10 +531,13 @@ def main():
                 if len(debugOutput) == 0:
                     task_list = [
                         # f"""Search for '{query}' of size {size} for {sex} on {website}.
-                        f"""Open {website}, reject all cookies (if prompted) and convert language to English. If you cannot convert language to English, then just proceed.
+                        f"""
+                        MAIN TASK:
+                        Open {website}, reject all cookies (if prompted) and convert language to English. If you cannot convert language to English, then just proceed.
                         Then find the search bar, input the search term = '{query}' and hit Enter. if the search bar cannot be found, move on to the next step.
                         Then filter with size={size} and sex={sex}.
 
+                        FURTHER INSTRUCTIONS:
                         Look at the top {result_count} results and visit the webpage for each item.
                         Parse these items' webpages and ensure that it matches the search term = '{query}'. 
                         Then return a .json with the primary keys as 'site_name' and 'products'. 
@@ -477,12 +546,23 @@ def main():
                         Refine the results for color, material, available sizes, and other properties by opening each products page.
                         Ignore delivery, return, care instructions, reviews, and other irrelevant information.
                         
+                        OTHER INSTRUCTONS:
                         Also, dont scroll too much to filter with size={size} and sex={sex}. These are usually present on the top (or left-side) of the page
                         """
                         for website in websites
                     ]
+                    st.sidebar.markdown('---')
+                    st.sidebar.text("Task Prompt:")
+                    # st.sidebar.write(task_list[0])
+                    st.sidebar.markdown(task_list[0])
 
                     initial_actions_list = [ [{'open_tab': {'url': website}}] for website in websites ]
+                    
+                    task_placeholders = []
+                    for _ in task_list:
+                        st.markdown('---')
+                        task_placeholders.append((st.progress(0), st.empty()))
+                    # task_placeholders = [st.empty() for _ in task_list]
 
                     controller = Controller(output_model=ProductList)
 
@@ -495,10 +575,10 @@ def main():
                         loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(loop)
                         results = loop.run_until_complete(
-                            asyncio.gather(run_agents(task_list, initial_actions_list, completion_event, controller), update_logs(log_placeholder, completion_event))
+                            asyncio.gather(run_agents(task_list, initial_actions_list, completion_event, controller, task_placeholders), update_logs(log_placeholder, completion_event))
                         )
                         listHistoryAgents = results[0]  # Get the results from the first coroutine
-                        print ('\n\n ========== \n listHistoryAgents: ', listHistoryAgents, '\n\n ==========\n\n')
+                        print ('\n\n ========== \n len(listHistoryAgents): ', len(listHistoryAgents), '\n\n ==========\n\n')
                     timeTaken = time.time() - tStart
                     st.write(f"Time taken: {timeTaken:.2f} seconds")
                     st.markdown('---')
@@ -539,9 +619,12 @@ def main():
                         combined_results[debugJson['site_name']] = debugJson['products']
 
                 # Step 5.2.99 - Debug
-                st.json(combined_results, expanded=False)
+                st.sidebar.markdown('---')
+                st.sidebar.text("Output json:")
+                st.sidebar.json(combined_results, expanded=False)
                 
                 ## ---------------- Step 6 - Display results
+                if not BOOL_PRODUCTION: pdb.set_trace() # check results in debug mode
                 if 1:
 
                     num_columns = 3  # Number of columns in the grid
@@ -549,6 +632,7 @@ def main():
 
                     try:
                         for siteName in combined_results:
+                            st.subheader(siteName)
                             for idx, item in enumerate(combined_results[siteName]):
                                 try:
                                     col = columns[idx % num_columns]

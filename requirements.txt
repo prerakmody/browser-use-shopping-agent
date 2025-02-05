@@ -1,6 +1,5 @@
 openai==1.61.0
 streamlit==1.41.1
 python-dotenv==1.0.1
-browser-use==0.1.33
+browser-use==0.1.35
 websockets==14.2
-markdownify==0.14.1
