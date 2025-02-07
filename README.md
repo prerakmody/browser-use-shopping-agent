@@ -35,6 +35,8 @@ ANCHOR_API_KEY="..."
 # Usage
 ```bash
 streamlit run main.py
+# OR
+streamlit run main.py --server.address 0.0.0.0
 ```
 
 <img src="./assets/streamlit.png" alt="StreamLit - Clothing Search App" width="500"/>

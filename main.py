@@ -93,7 +93,6 @@ def install_playwright_browsers():
 if not BOOL_PRODUCTION:
     install_playwright_browsers()
 
-
 def run_playwright_with_xvfb():
     """
     NOTE: have not tried this yet
@@ -366,6 +365,8 @@ def extract_messages_from_history(agent, task_placeholder):
                 for tool_call in message.message.tool_calls:
                     if tool_call['name'] == 'AgentOutput':
                         current_state = tool_call['args']['current_state']
+                        token_count = message.metadata.input_tokens
+                        current_state['token_count'] = token_count
                         history_states.append(current_state)
 
         # Step 2 - Display current (i.e. latest) state
@@ -375,15 +376,27 @@ def extract_messages_from_history(agent, task_placeholder):
         evaluation_previous_goal = current_state['evaluation_previous_goal']
         memory                   = current_state['memory']
         next_goal                = current_state['next_goal']
+        token_count              = current_state['token_count']
         current_state_str = f"""
-        - [INFO] n_steps                 : {n_steps}
+        - [INFO] n_steps                 : {n_steps} (token_count={token_count})
         - [INFO] page_summary            : {page_summary}
         - [INFO] evaluation_previous_goal: {evaluation_previous_goal}
         - [INFO] memory                  : {memory}
         - [INFO] next_goal               : {next_goal}
         """
+
+        if 1:
+            llm = ChatGoogleGenerativeAI(model=MODEL_GEMINI_2_FLASH_EXP, api_key=SecretStr(os.getenv(ENV_GEMINI_API_KEY)))
+            response = llm.invoke(current_state_str + """\n
+                            Summarize the text above so that the output looks like this. Fill the braces with information
+                            **Step={}**:
+                            - Previously did: {}
+                            - Now doing: {}
+                            """)
+            current_state_str = response.content
+
         task_placeholder[0].progress(n_steps)
-        task_placeholder[1].text(current_state_str)
+        task_placeholder[1].markdown(current_state_str)
         print ('\n ---------------')
         print (current_state_str)
         print (' --------------- \n')
@@ -419,6 +432,7 @@ async def run_agent(task, initial_actions, controller, task_placeholder):
         # Step 3 - Extract results from agent
         try:
             # NOTE: relies on .run() function doing "yield self.history" (instead of return self.history) AND also a yield None in "max_steps" for loop.
+            task_placeholder_all = []
             async for status in agent.run():
                 extract_messages_from_history(agent, task_placeholder)
                 result = status  # Capture the final result
@@ -624,7 +638,7 @@ def main():
                 st.sidebar.json(combined_results, expanded=False)
                 
                 ## ---------------- Step 6 - Display results
-                if not BOOL_PRODUCTION: pdb.set_trace() # check results in debug mode
+                # if not BOOL_PRODUCTION: pdb.set_trace() # check results in debug mode
                 if 1:
 
                     num_columns = 3  # Number of columns in the grid
