@@ -41,6 +41,8 @@ streamlit run main.py --server.address 0.0.0.0
 
 <img src="./assets/streamlit.png" alt="StreamLit - Clothing Search App" width="500"/>
 
+![Watch the video](https://github.com/prerakmody/browser-use-shopping-agent/blob/main/assets/streamlit-video.mp4)
+
 # Future Stuff
 1. [P] https://github.com/emmetify/emmetify-py
 2. [P] Track the steps of the agent, specifically the "Eval" and "Next Goal" parts

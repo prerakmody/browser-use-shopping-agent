@@ -351,6 +351,10 @@ def extract_messages_from_history(agent, task_placeholder):
     agent : Agent
         Agent object
     task_placeholder : Streamlit placeholder (st.progress(), st.empty())
+
+    Notes
+    -----
+    # NOTE: relies on .run() function doing "yield self.history" (instead of return self.history) AND also a yield None in "max_steps" for loop.
     """
 
     try:
