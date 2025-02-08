@@ -49,6 +49,14 @@ streamlit run main.py --server.address 0.0.0.0
 
 [![Now in Android: 55](https://i.ytimg.com/vi/Hc79sDi3f0U/maxresdefault.jpg)](https://www.youtube.com/watch?v=Hc79sDi3f0U "Now in Android: 55")
 
+---
+
+<video src="https://www.youtube.com/watch?v=Hc79sDi3f0U" alt="StreamLit - Clothing Search App" width="500" />
+
+<video src="https://raw.githubusercontent.com/prerakmody/browser-use-shopping-agent/main/assets/streamlit-video.mp4" alt="StreamLit - Clothing Search App" width="500" />
+
+<video src="https://github.com/prerakmody/browser-use-shopping-agent/blob/main/assets/streamlit-video.mp4" width="500" />
+
 # Future Stuff
 1. [P] https://github.com/emmetify/emmetify-py
 2. [P] Track the steps of the agent, specifically the "Eval" and "Next Goal" parts
