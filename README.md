@@ -2,7 +2,7 @@
 Send the same query to multiple shopping websites and displays the results
 
 # Installation
-1. Get OpenAI API key [here](https://platform.openai.com/settings/organization/usage)
+1. Get OpenAI API key [here](https://platform.openai.com/settings/organization/usage). Or a gemini key [here](https://console.cloud.google.com/apis/api/generativelanguage.googleapis.com/metrics)
 2. Install packages
 ```bash
 pip instal browser_use, streamlit, dotenv
@@ -42,6 +42,8 @@ streamlit run main.py --server.address 0.0.0.0
 <img src="./assets/streamlit.png" alt="StreamLit - Clothing Search App" width="500"/>
 
 [Watch the video](https://github.com/prerakmody/browser-use-shopping-agent/blob/main/assets/streamlit-video.mp4)
+
+![Watch the video](https://github.com/prerakmody/browser-use-shopping-agent/blob/main/assets/streamlit-video.webm)
 
 # Future Stuff
 1. [P] https://github.com/emmetify/emmetify-py
