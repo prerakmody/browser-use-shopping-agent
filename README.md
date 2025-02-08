@@ -39,6 +39,11 @@ streamlit run main.py
 streamlit run main.py --server.address 0.0.0.0
 ```
 
+<video src="https://github.com/user-attachments/assets/9d457eee-0ab0-4c85-8e04-51b3da8790eb" width="352" height="720"></video>
+
+
+
+
 
 # Future Stuff
 1. [P] https://github.com/emmetify/emmetify-py
